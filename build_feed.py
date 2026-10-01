@@ -1,0 +1,77 @@
+"""JTclima -> Google Ads Custom feed (Business data). Pulls the WooCommerce Store API on jtclima.bg
+and writes feed/jtclima_dynamic_remarketing_feed.csv in Google's Custom feed template column order.
+Stdlib only. Refuses to overwrite the feed if the fetch looks wrong."""
+import csv, html, json, re, sys, time, urllib.request
+
+BASE = "https://jtclima.bg/wp-json/wc/store/v1/products?per_page=100&page=%d"
+OUT = "feed/jtclima_dynamic_remarketing_feed.csv"
+MIN_ROWS = 300
+HEADER = ["ID", "ID2", "Item title", "Final URL", "Image URL", "Item subtitle", "Item description",
+          "Item category", "Price", "Sale price", "Contextual keywords", "Item address", "Tracking template",
+          "Custom parameter", "Final mobile URL", "Android app link", "iOS app link", "iOS app store ID",
+          "Formatted price", "Formatted sale price"]
+
+
+def get(page):
+    last = None
+    for attempt in range(4):
+        try:
+            req = urllib.request.Request(BASE % page, headers={"User-Agent": "Mozilla/5.0"})
+            return json.loads(urllib.request.urlopen(req, timeout=60).read().decode("utf-8"))
+        except Exception as e:  # network / WAF / json
+            last = e
+            time.sleep(5 * (attempt + 1))
+    raise SystemExit("Store API page %d failed: %r" % (page, last))
+
+
+def clip(s, n=25):
+    s = html.unescape(re.sub(r"<[^>]+>", "", s or "")).strip()
+    if len(s) <= n:
+        return s
+    return s[:n].rsplit(" ", 1)[0] if " " in s[:n] else s[:n]
+
+
+def money(v, pr):
+    mu = pr.get("currency_minor_unit", 2)
+    return "%s %s" % ("%.*f" % (mu, int(v) / 10 ** mu), pr.get("currency_code", "EUR"))
+
+
+products, page = [], 1
+while page <= 30:
+    data = get(page)
+    if not data:
+        break
+    products += data
+    page += 1
+    if len(data) < 100:
+        break
+
+rows, skipped = [], 0
+for r in products:
+    pr = r["prices"]
+    if not pr.get("price") or pr["price"] == "0" or not r.get("is_in_stock", True):
+        skipped += 1
+        continue
+    name = html.unescape(r["name"])
+    toks = [t.strip(",;") for t in name.split()]
+    lat = [t for t in toks if re.search(r"[A-Za-z]", t)]
+    brand = lat[0] if lat else ""
+    model = next((t for t in reversed(toks) if re.search(r"\d", t) and re.search(r"[A-Za-z]", t)), "")
+    title = clip(" ".join(dict.fromkeys([brand, model])).strip() or name)
+    cyr = " ".join(t for t in toks if not re.search(r"[A-Za-z0-9]", t))
+    cats = [html.unescape(c["name"]) for c in r.get("categories", []) if not c["name"].isdigit()]
+    cat = cats[0] if cats else ""
+    price = money(pr["regular_price"], pr)
+    sale = money(pr["sale_price"], pr) if pr["sale_price"] and pr["sale_price"] != pr["regular_price"] else ""
+    img = r["images"][0]["src"] if r.get("images") else ""
+    kw = ";".join(dict.fromkeys(([clip(cyr, 60)] if cyr else []) + cats))
+    rows.append([r["id"], "", title, r["permalink"], img, clip(cat), clip(cyr), cat, price, sale, kw] + [""] * 9)
+
+if len(rows) < MIN_ROWS:
+    raise SystemExit("Only %d products (min %d) - feed NOT overwritten" % (len(rows), MIN_ROWS))
+
+with open(OUT, "w", newline="", encoding="utf-8") as f:
+    w = csv.writer(f)
+    w.writerow(HEADER)
+    w.writerows(rows)
+print("%d fetched, %d written, %d skipped (no price / out of stock)" % (len(products), len(rows), skipped))
