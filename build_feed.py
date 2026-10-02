@@ -6,6 +6,7 @@ import csv, html, json, re, sys, time, urllib.request
 BASE = "https://jtclima.bg/wp-json/wc/store/v1/products?per_page=100&page=%d"
 OUT = "feed/jtclima_dynamic_remarketing_feed.csv"
 MIN_ROWS = 300
+MIN_PRICE = 300  # EUR - products priced below this (sale price if any, else regular) are left out of the feed
 HEADER = ["ID", "ID2", "Item title", "Final URL", "Image URL", "Item subtitle", "Item description",
           "Item category", "Price", "Sale price", "Contextual keywords", "Item address", "Tracking template",
           "Custom parameter", "Final mobile URL", "Android app link", "iOS app link", "iOS app store ID",
@@ -46,7 +47,7 @@ while page <= 30:
     if len(data) < 100:
         break
 
-rows, skipped = [], 0
+rows, skipped, below_min = [], 0, 0
 for r in products:
     pr = r["prices"]
     if not pr.get("price") or pr["price"] == "0" or not r.get("is_in_stock", True):
@@ -63,6 +64,11 @@ for r in products:
     cat = cats[0] if cats else ""
     price = money(pr["regular_price"], pr)
     sale = money(pr["sale_price"], pr) if pr["sale_price"] and pr["sale_price"] != pr["regular_price"] else ""
+    mu = pr.get("currency_minor_unit", 2)
+    effective = int(pr["sale_price"] if sale else pr["regular_price"]) / 10 ** mu
+    if effective < MIN_PRICE:
+        below_min += 1
+        continue
     img = r["images"][0]["src"] if r.get("images") else ""
     kw = ";".join(dict.fromkeys(([clip(cyr, 60)] if cyr else []) + cats))
     rows.append([r["id"], "", title, r["permalink"], img, clip(cat), clip(cyr), cat, price, sale, kw] + [""] * 9)
@@ -74,4 +80,4 @@ with open(OUT, "w", newline="", encoding="utf-8") as f:
     w = csv.writer(f)
     w.writerow(HEADER)
     w.writerows(rows)
-print("%d fetched, %d written, %d skipped (no price / out of stock)" % (len(products), len(rows), skipped))
+print("%d fetched, %d written, %d skipped (no price / out of stock), %d below %d EUR" % (len(products), len(rows), skipped, below_min, MIN_PRICE))
