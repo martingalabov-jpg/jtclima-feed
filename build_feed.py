@@ -32,10 +32,47 @@ def clip(s, n=25):
     return s[:n].rsplit(" ", 1)[0] if " " in s[:n] else s[:n]
 
 
+def fmt(v, pr):
+    """Bulgarian display price: '1 779,00 €' (non-breaking spaces so it never wraps)."""
+    mu = pr.get("currency_minor_unit", 2)
+    num = "{:,.{p}f}".format(int(v) / 10 ** mu, p=mu).replace(",", "\u00a0").replace(".", ",")
+    cur = pr.get("currency_code", "EUR")
+    return num + "\u00a0" + {"EUR": "€"}.get(cur, cur)
+
 def money(v, pr):
     mu = pr.get("currency_minor_unit", 2)
     return "%s %s" % ("%.*f" % (mu, int(v) / 10 ** mu), pr.get("currency_code", "EUR"))
 
+
+# Product type word put in front of the title (Google Ads item titles are max 25 chars).
+# Name keywords win (they are specific); category keywords are the fallback.
+NAME_TYPES = [("термопомпен бойлер", "Бойлер"), ("термопомп", "Термопомпа"), ("климатик", "Климатик"),
+              ("буфер", "Буфер"), ("бойлер", "Бойлер"), ("конвектор", "Конвектор"), ("котел", "Котел"), ("котли", "Котел")]
+CAT_TYPES = [("термопомпени бойлери", "Бойлер"), ("термопомп", "Термопомпа"), ("климатик", "Климатик"),
+             ("касет", "Климатик"), ("канал", "Климатик"), ("колон", "Климатик"), ("таван", "Климатик"),
+             ("вътрешни тела", "Вътрешно тяло"), ("външни тела", "Външно тяло"), ("бойлер", "Бойлер"),
+             ("буфер", "Буфер"), ("конвектор", "Конвектор"), ("котли", "Котел")]
+
+def product_type(cats, name):
+    n = name.lower()
+    for key, label in NAME_TYPES:
+        if key in n:
+            return label
+    c = " ".join(cats).lower()
+    for key, label in CAT_TYPES:
+        if key in c:
+            return label
+    return ""
+
+def with_type(ptype, brand, model, base, n=25):
+    """'<type> <brand> <model>' if it fits in n chars, else drop the brand, else the model."""
+    if not ptype or not (brand or model):
+        return base
+    for parts in ((ptype, brand, model), (ptype, model), (ptype, brand)):
+        t = " ".join(dict.fromkeys(p for p in parts if p))
+        if len(t) <= n and t != ptype:
+            return t
+    return clip(ptype + " " + base, n)
 
 products, page = [], 1
 while page <= 30:
@@ -62,6 +99,7 @@ for r in products:
     cyr = " ".join(t for t in toks if not re.search(r"[A-Za-z0-9]", t))
     cats = [html.unescape(c["name"]) for c in r.get("categories", []) if not c["name"].isdigit()]
     cat = cats[0] if cats else ""
+    title = with_type(product_type(cats, name), brand, model, title)
     price = money(pr["regular_price"], pr)
     sale = money(pr["sale_price"], pr) if pr["sale_price"] and pr["sale_price"] != pr["regular_price"] else ""
     mu = pr.get("currency_minor_unit", 2)
@@ -71,7 +109,7 @@ for r in products:
         continue
     img = r["images"][0]["src"] if r.get("images") else ""
     kw = ";".join(dict.fromkeys(([clip(cyr, 60)] if cyr else []) + cats))
-    rows.append([r["id"], "", title, r["permalink"], img, clip(cat), clip(cyr), cat, price, sale, kw] + [""] * 9)
+    rows.append([r["id"], "", title, r["permalink"], img, clip(cat), clip(cyr), cat, price, sale, kw] + [""] * 7 + [fmt(pr["regular_price"], pr), fmt(pr["sale_price"], pr) if sale else ""])
 
 if len(rows) < MIN_ROWS:
     raise SystemExit("Only %d products (min %d) - feed NOT overwritten" % (len(rows), MIN_ROWS))
