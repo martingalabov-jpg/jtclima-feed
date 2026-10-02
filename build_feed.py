@@ -33,9 +33,10 @@ def clip(s, n=25):
 
 
 def fmt(v, pr):
-    """Bulgarian display price: '1 779,00 €' (non-breaking spaces so it never wraps)."""
+    """Bulgarian display price: '1 779 €' or '659,50 €' - no cents when whole, non-breaking spaces so it never wraps."""
     mu = pr.get("currency_minor_unit", 2)
-    num = "{:,.{p}f}".format(int(v) / 10 ** mu, p=mu).replace(",", "\u00a0").replace(".", ",")
+    dec = 0 if int(v) % 10 ** mu == 0 else mu
+    num = "{:,.{p}f}".format(int(v) / 10 ** mu, p=dec).replace(",", "\u00a0").replace(".", ",")
     cur = pr.get("currency_code", "EUR")
     return num + "\u00a0" + {"EUR": "€"}.get(cur, cur)
 
