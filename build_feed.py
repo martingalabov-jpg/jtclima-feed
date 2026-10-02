@@ -33,12 +33,13 @@ def clip(s, n=25):
 
 
 def fmt(v, pr):
-    """Bulgarian display price: '1 779 €' or '659,50 €' - no cents when whole, non-breaking spaces so it never wraps."""
+    """Display price: '€1 779' or '€659,50' - symbol in front, no cents when whole, non-breaking space for thousands."""
     mu = pr.get("currency_minor_unit", 2)
     dec = 0 if int(v) % 10 ** mu == 0 else mu
     num = "{:,.{p}f}".format(int(v) / 10 ** mu, p=dec).replace(",", "\u00a0").replace(".", ",")
     cur = pr.get("currency_code", "EUR")
-    return num + "\u00a0" + {"EUR": "€"}.get(cur, cur)
+    sym = {"EUR": "€"}.get(cur)
+    return sym + num if sym else num + "\u00a0" + cur
 
 def money(v, pr):
     mu = pr.get("currency_minor_unit", 2)
