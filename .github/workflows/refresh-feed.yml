@@ -19,6 +19,9 @@ jobs:
           python-version: "3.12"
       - name: Build feed
         run: python build_feed.py
+      - name: Build OpenAI (ChatGPT Ads) feed
+        run: python build_openai_feed.py
+        continue-on-error: true   # a failure here must not block the Google feed commit
       - name: Record run (keeps the schedule alive; GitHub pauses scheduled jobs after 60 days without commits)
         run: date -u +"%Y-%m-%dT%H:%M:%SZ" > feed/last_run.txt
       - name: Commit
