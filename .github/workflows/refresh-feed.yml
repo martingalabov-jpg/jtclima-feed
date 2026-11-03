@@ -12,6 +12,8 @@ jobs:
   refresh:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      HAS_OPENAI_SFTP: ${{ secrets.OPENAI_SFTP_URI != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -20,6 +22,7 @@ jobs:
       - name: Build feed
         run: python build_feed.py
       - name: Build OpenAI (ChatGPT Ads) feed
+        id: openai_feed
         run: python build_openai_feed.py
         continue-on-error: true   # a failure here must not block the Google feed commit
       - name: Record run (keeps the schedule alive; GitHub pauses scheduled jobs after 60 days without commits)
@@ -32,3 +35,15 @@ jobs:
           git commit -m "Refresh feed $(date -u +%F)" || echo "nothing to commit"
           git pull --rebase -X theirs origin main
           git push
+      # OpenAI takes product feeds over SFTP only. Runs after the commit so an upload failure never blocks the
+      # Google feed, and only when today's OpenAI build succeeded and the SFTP secrets are set.
+      - name: Upload OpenAI feed over SFTP
+        if: steps.openai_feed.outcome == 'success' && env.HAS_OPENAI_SFTP == 'true'
+        env:
+          OPENAI_SFTP_URI: ${{ secrets.OPENAI_SFTP_URI }}
+          OPENAI_SFTP_PASSWORD: ${{ secrets.OPENAI_SFTP_PASSWORD }}
+          OPENAI_SFTP_PRIVATE_KEY: ${{ secrets.OPENAI_SFTP_PRIVATE_KEY }}
+          OPENAI_SFTP_HOST_KEY: ${{ secrets.OPENAI_SFTP_HOST_KEY }}
+        run: |
+          pip install --quiet "paramiko==3.5.1"
+          python upload_openai_sftp.py

@@ -19,3 +19,14 @@ https://raw.githubusercontent.com/martingalabov-jpg/jtclima-feed/main/feed/jtcli
   availability, price, ...). Products under 300 EUR (effective price) are left out; `is_ads_eligible=true` only for
   heat pump categories. Built in the same daily run.
 * OpenAI ingests feeds over SFTP only (no URL fetch); this link is the daily-fresh source file for that upload.
+* `upload_openai_sftp.py` - the daily run uploads `feed/jtclima_openai_products.csv.gz` to the feed's SFTP root
+  (same filename, overwritten). Skipped until the repo secrets below exist, and when the OpenAI build fails.
+
+Repo secrets (Settings > Secrets and variables > Actions), from `POST /v1/feeds/{feed_id}/sftp_access`:
+
+| Secret | Value |
+| --- | --- |
+| `OPENAI_SFTP_URI` | connection URI returned by that call, e.g. `sftp://user@host:port` |
+| `OPENAI_SFTP_PASSWORD` | password from that call (password auth) - or use the key below instead |
+| `OPENAI_SFTP_PRIVATE_KEY` | private key whose public half was sent as `ssh_public_key` (key auth) |
+| `OPENAI_SFTP_HOST_KEY` | optional: `ssh-ed25519 AAAA...` to pin the server; the first run logs it |
